@@ -1,3 +1,4 @@
+// backend/server.js
 const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
@@ -6,17 +7,20 @@ const jwt = require("jsonwebtoken");
 require("dotenv").config();
 
 const User = require("./models/User");
+const questionRoutes = require("./routes/questions");
+const blockRoutes = require("./routes/blocks");
+
 const app = express();
+
+// Middleware-lər
 app.use(cors());
 app.use(express.json());
 
-// MongoDB bağlantısı
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ MongoDB bağlantısı uğurla quruldu"))
-  .catch((err) => console.error("❌ MongoDB bağlantısı xətası:", err));
+// Route-lar
+app.use("/api/blocks", blockRoutes);
+app.use("/api/questions", questionRoutes);
 
-// 🔐 Middleware – Token yoxla
+// Middleware – Token yoxla
 const authenticate = (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader)
@@ -32,7 +36,6 @@ const authenticate = (req, res, next) => {
   }
 };
 
-// 👮‍♂️ Middleware – Adminmi?
 const isAdmin = (req, res, next) => {
   if (req.user.role !== "admin") {
     return res.status(403).json({ message: "Yalnız admin icazəlidir" });
@@ -40,7 +43,7 @@ const isAdmin = (req, res, next) => {
   next();
 };
 
-// Admin varsa yaratma, yoxdursa yarat
+// MongoDB bağlantısı və serverin başlaması
 async function createAdmin() {
   const exists = await User.findOne({ username: "admin" });
   if (exists) return console.log("ℹ️ Admin artıq mövcuddur");
@@ -54,13 +57,25 @@ async function createAdmin() {
     group: "-",
     role: "admin",
   });
-
   await admin.save();
   console.log("✅ Admin yaradıldı: admin / admin123");
 }
-createAdmin();
 
-// Register
+mongoose.connect(process.env.MONGO_URI)
+  .then(async () => {
+    console.log("✅ MongoDB bağlantısı uğurla quruldu");
+
+    await createAdmin();
+
+    app.listen(5000, () => {
+      console.log("🚀 Backend çalışır: http://localhost:5000");
+      });
+  })
+  .catch((err) => {
+    console.error("❌ MongoDB bağlantı xətası:", err.message);
+  });
+
+// Auth route-ları
 app.post("/api/register", async (req, res) => {
   const { firstName, lastName, username, password, group } = req.body;
   try {
@@ -84,7 +99,6 @@ app.post("/api/register", async (req, res) => {
   }
 });
 
-// Admin register
 app.post("/api/admin-register", async (req, res) => {
   const { firstName, lastName, username, password } = req.body;
   try {
@@ -101,7 +115,6 @@ app.post("/api/admin-register", async (req, res) => {
       group: "-",
       role: "admin",
     });
-
     await newAdmin.save();
     res.json({ message: "Admin qeydiyyatı uğurla tamamlandı" });
   } catch (err) {
@@ -109,7 +122,6 @@ app.post("/api/admin-register", async (req, res) => {
   }
 });
 
-// Login
 app.post("/api/login", async (req, res) => {
   const { username, password } = req.body;
   try {
@@ -138,12 +150,10 @@ app.post("/api/login", async (req, res) => {
   }
 });
 
-// Profile (auth)
 app.get("/api/profile", authenticate, (req, res) => {
   res.json({ user: req.user });
 });
 
-// Bütün istifadəçiləri göstər (admin only)
 app.get("/api/users", authenticate, isAdmin, async (req, res) => {
   try {
     const users = await User.find().select("-password");
@@ -153,7 +163,6 @@ app.get("/api/users", authenticate, isAdmin, async (req, res) => {
   }
 });
 
-// İstifadəçi sil (admin only)
 app.delete("/api/users/:id", authenticate, isAdmin, async (req, res) => {
   try {
     const deleted = await User.findByIdAndDelete(req.params.id);
@@ -166,7 +175,6 @@ app.delete("/api/users/:id", authenticate, isAdmin, async (req, res) => {
   }
 });
 
-// Qrup dəyiş (admin only)
 app.put("/api/users/:id", authenticate, isAdmin, async (req, res) => {
   try {
     const { group } = req.body;
@@ -182,8 +190,4 @@ app.put("/api/users/:id", authenticate, isAdmin, async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: "Xəta baş verdi" });
   }
-});
-
-app.listen(5000, () => {
-  console.log("🚀 Backend çalışır: http://localhost:5000");
 });
